@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define MAX_ARGS 100
 
@@ -28,6 +29,7 @@ void show_help(void) {
     printf("  help            - Show this help message\n");
     printf("  exit            - Exit the shell\n");
     printf("  command &       - Run command in background\n");
+    printf("  command > file  - Redirect output to a file\n");
     printf("You can also run external Linux commands.\n");
 }
 
@@ -67,6 +69,31 @@ int handle_builtin(char **args) {
 }
 
 void execute_command(char **args, int background) {
+    char *output_file = NULL;
+    int i = 0;
+
+    while (args[i] != NULL) {
+        if (strcmp(args[i], ">") == 0) {
+            if (args[i + 1] == NULL) {
+                fprintf(stderr, "Error: missing output filename\n");
+                last_status = 1;
+                return;
+            }
+
+            output_file = args[i + 1];
+            args[i] = NULL;
+            break;
+        }
+
+        i++;
+    }
+
+    if (args[0] == NULL) {
+        fprintf(stderr, "Error: missing command\n");
+        last_status = 1;
+        return;
+    }
+
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -76,6 +103,23 @@ void execute_command(char **args, int background) {
     }
 
     if (pid == 0) {
+        if (output_file != NULL) {
+            int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+            if (fd < 0) {
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+
+            if (dup2(fd, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                close(fd);
+                exit(EXIT_FAILURE);
+            }
+
+            close(fd);
+        }
+
         execvp(args[0], args);
         perror("execvp");
         exit(EXIT_FAILURE);
