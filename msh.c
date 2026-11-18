@@ -2,25 +2,53 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define MAX_ARGS 100
 
-// Split the command entered by the user into arguments
+// Separate the command into arguments
 void parse_command(char *line, char *args[])
 {
     int i = 0;
-
     char *token = strtok(line, " \t\n");
 
     while (token != NULL && i < MAX_ARGS - 1)
     {
         args[i] = token;
         i++;
-
         token = strtok(NULL, " \t\n");
     }
 
     args[i] = NULL;
+}
+
+// Execute an external Linux command
+void execute_command(char *args[])
+{
+    pid_t pid = fork();
+
+    if (pid < 0)
+    {
+        perror("fork");
+        return;
+    }
+
+    if (pid == 0)
+    {
+        // Child process executes the command
+        execvp(args[0], args);
+
+        // This runs only if execvp fails
+        perror("Command execution failed");
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        // Parent waits for the child process
+        waitpid(pid, NULL, 0);
+    }
 }
 
 int main(void)
@@ -53,21 +81,14 @@ int main(void)
             continue;
         }
 
-        // Separate the command into individual arguments
         parse_command(line, args);
 
-        // Ignore an empty command
         if (args[0] == NULL)
         {
             continue;
         }
 
-        printf("Command: %s\n", args[0]);
-
-        for (int i = 1; args[i] != NULL; i++)
-        {
-            printf("Argument %d: %s\n", i, args[i]);
-        }
+        execute_command(args);
     }
 
     free(line);
