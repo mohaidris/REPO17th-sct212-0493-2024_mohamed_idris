@@ -1,6 +1,27 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#define MAX_ARGS 100
+
+// Split the command entered by the user into arguments
+void parse_command(char *line, char *args[])
+{
+    int i = 0;
+
+    char *token = strtok(line, " \t\n");
+
+    while (token != NULL && i < MAX_ARGS - 1)
+    {
+        args[i] = token;
+        i++;
+
+        token = strtok(NULL, " \t\n");
+    }
+
+    args[i] = NULL;
+}
 
 int main(void)
 {
@@ -8,18 +29,17 @@ int main(void)
     size_t line_size = 0;
     ssize_t characters_read;
 
+    char *args[MAX_ARGS];
+
     printf("Welcome to Mini Shell!\n");
 
     while (1)
     {
-        // Display the shell prompt
         printf("msh[0]> ");
         fflush(stdout);
 
-        //read user info
         characters_read = getline(&line, &line_size, stdin);
 
-        // Check whether the user pressed Ctrl+D
         if (characters_read == -1)
         {
             if (feof(stdin))
@@ -33,16 +53,23 @@ int main(void)
             continue;
         }
 
-        // Ignore empty lines for now
-        if (characters_read == 1 && line[0] == '\n')
+        // Separate the command into individual arguments
+        parse_command(line, args);
+
+        // Ignore an empty command
+        if (args[0] == NULL)
         {
             continue;
         }
 
-        printf("You entered: %s", line);
+        printf("Command: %s\n", args[0]);
+
+        for (int i = 1; args[i] != NULL; i++)
+        {
+            printf("Argument %d: %s\n", i, args[i]);
+        }
     }
 
-    // Release the memory allocated by getline
     free(line);
 
     return 0;
