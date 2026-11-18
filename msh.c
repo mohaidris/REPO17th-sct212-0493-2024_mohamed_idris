@@ -6,10 +6,17 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <errno.h>
 
 #define MAX_ARGS 100
 
 int last_status = 0;
+
+void handle_sigint(int signal_number) {
+    (void)signal_number;
+    write(STDOUT_FILENO, "\nUse 'exit' to quit the shell.\n", 31);
+}
 
 void parse_command(char *line, char **args) {
     int i = 0;
@@ -74,7 +81,7 @@ void execute_command(char **args, int background) {
 
     while (args[i] != NULL) {
         if (strcmp(args[i], ">") == 0) {
-            if (args[i + 1] == NULL) {
+            if (args[i + 1] == NULL || strcmp(args[i + 1], "&") == 0) {
                 fprintf(stderr, "Error: missing output filename\n");
                 last_status = 1;
                 return;
@@ -84,7 +91,6 @@ void execute_command(char **args, int background) {
             args[i] = NULL;
             break;
         }
-
         i++;
     }
 
@@ -103,6 +109,8 @@ void execute_command(char **args, int background) {
     }
 
     if (pid == 0) {
+        signal(SIGINT, SIG_DFL);
+
         if (output_file != NULL) {
             int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
@@ -132,8 +140,13 @@ void execute_command(char **args, int background) {
     }
 
     int status;
+    pid_t result;
 
-    if (waitpid(pid, &status, 0) < 0) {
+    do {
+        result = waitpid(pid, &status, 0);
+    } while (result < 0 && errno == EINTR);
+
+    if (result < 0) {
         perror("waitpid");
         last_status = 1;
     } else if (WIFEXITED(status)) {
@@ -144,6 +157,17 @@ void execute_command(char **args, int background) {
 }
 
 int main(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handle_sigint;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &sa, NULL) < 0) {
+        perror("sigaction");
+        return EXIT_FAILURE;
+    }
+
     char *line = NULL;
     size_t capacity = 0;
     char *args[MAX_ARGS];
@@ -154,7 +178,15 @@ int main(void) {
         printf("msh[%d]> ", last_status);
         fflush(stdout);
 
-        if (getline(&line, &capacity, stdin) == -1) {
+        errno = 0;
+        ssize_t input_length = getline(&line, &capacity, stdin);
+
+        if (input_length == -1) {
+            if (errno == EINTR) {
+                clearerr(stdin);
+                continue;
+            }
+
             printf("\n");
             break;
         }
