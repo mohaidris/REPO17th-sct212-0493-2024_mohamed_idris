@@ -27,6 +27,7 @@ void show_help(void) {
     printf("  cd [directory] - Change directory\n");
     printf("  help            - Show this help message\n");
     printf("  exit            - Exit the shell\n");
+    printf("  command &       - Run command in background\n");
     printf("You can also run external Linux commands.\n");
 }
 
@@ -65,7 +66,7 @@ int handle_builtin(char **args) {
     return -1;
 }
 
-void execute_command(char **args) {
+void execute_command(char **args, int background) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -78,6 +79,12 @@ void execute_command(char **args) {
         execvp(args[0], args);
         perror("execvp");
         exit(EXIT_FAILURE);
+    }
+
+    if (background) {
+        printf("[Background process started: PID %d]\n", pid);
+        last_status = 0;
+        return;
     }
 
     int status;
@@ -121,7 +128,22 @@ int main(void) {
         }
 
         if (result == -1) {
-            execute_command(args);
+            int i = 0;
+
+            while (args[i] != NULL) {
+                i++;
+            }
+
+            int background = 0;
+
+            if (i > 0 && strcmp(args[i - 1], "&") == 0) {
+                background = 1;
+                args[i - 1] = NULL;
+            }
+
+            if (args[0] != NULL) {
+                execute_command(args, background);
+            }
         }
     }
 
