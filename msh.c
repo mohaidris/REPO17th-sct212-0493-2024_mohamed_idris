@@ -10,106 +10,121 @@
 
 int last_status = 0;
 
-// Split the command into individual arguments
-void parse_command(char *line, char *args[])
-{
+void parse_command(char *line, char **args) {
     int i = 0;
-
     char *token = strtok(line, " \t\n");
 
-    while (token != NULL && i < MAX_ARGS - 1)
-    {
-        args[i] = token;
-        i++;
+    while (token != NULL && i < MAX_ARGS - 1) {
+        args[i++] = token;
         token = strtok(NULL, " \t\n");
     }
 
     args[i] = NULL;
 }
 
-// Execute an external command and check its result
-void execute_command(char *args[])
-{
+void show_help(void) {
+    printf("Mini Shell Commands:\n");
+    printf("  cd [directory] - Change directory\n");
+    printf("  help            - Show this help message\n");
+    printf("  exit            - Exit the shell\n");
+    printf("You can also run external Linux commands.\n");
+}
+
+int handle_builtin(char **args) {
+    if (args[0] == NULL) {
+        return 0;
+    }
+
+    if (strcmp(args[0], "exit") == 0) {
+        return 1;
+    }
+
+    if (strcmp(args[0], "help") == 0) {
+        show_help();
+        last_status = 0;
+        return 0;
+    }
+
+    if (strcmp(args[0], "cd") == 0) {
+        char *directory = args[1];
+
+        if (directory == NULL) {
+            directory = getenv("HOME");
+        }
+
+        if (directory == NULL || chdir(directory) != 0) {
+            perror("cd");
+            last_status = 1;
+        } else {
+            last_status = 0;
+        }
+
+        return 0;
+    }
+
+    return -1;
+}
+
+void execute_command(char **args) {
     pid_t pid = fork();
 
-    if (pid < 0)
-    {
+    if (pid < 0) {
         perror("fork");
         last_status = 1;
         return;
     }
 
-    if (pid == 0)
-    {
-        // Child process
+    if (pid == 0) {
         execvp(args[0], args);
-
-        perror("Command execution failed");
+        perror("execvp");
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        // Parent process waits for the child
-        int status;
 
-        if (waitpid(pid, &status, 0) == -1)
-        {
-            perror("waitpid");
-            last_status = 1;
-        }
-        else if (WIFEXITED(status))
-        {
-            last_status = WEXITSTATUS(status);
-        }
-        else
-        {
-            last_status = 1;
-        }
+    int status;
+
+    if (waitpid(pid, &status, 0) < 0) {
+        perror("waitpid");
+        last_status = 1;
+    } else if (WIFEXITED(status)) {
+        last_status = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        last_status = 128 + WTERMSIG(status);
     }
 }
 
-int main(void)
-{
+int main(void) {
     char *line = NULL;
-    size_t line_size = 0;
-    ssize_t characters_read;
-
+    size_t capacity = 0;
     char *args[MAX_ARGS];
 
     printf("Welcome to Mini Shell!\n");
 
-    while (1)
-    {
-        // Display the previous command's exit status
+    while (1) {
         printf("msh[%d]> ", last_status);
         fflush(stdout);
 
-        characters_read = getline(&line, &line_size, stdin);
-
-        if (characters_read == -1)
-        {
-            if (feof(stdin))
-            {
-                printf("\nGoodbye!\n");
-                break;
-            }
-
-            perror("getline");
-            clearerr(stdin);
-            continue;
+        if (getline(&line, &capacity, stdin) == -1) {
+            printf("\n");
+            break;
         }
 
         parse_command(line, args);
 
-        if (args[0] == NULL)
-        {
+        if (args[0] == NULL) {
             continue;
         }
 
-        execute_command(args);
+        int result = handle_builtin(args);
+
+        if (result == 1) {
+            break;
+        }
+
+        if (result == -1) {
+            execute_command(args);
+        }
     }
 
     free(line);
-
     return 0;
 }
